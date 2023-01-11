@@ -39,7 +39,7 @@ class CurrentThreadExecutor(Executor):
         self._work_thread = threading.current_thread()
         self._work_queue = queue.Queue()
         self._broken = False
-        
+
     def broken(self):
         return self._broken
 

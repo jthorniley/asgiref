@@ -392,10 +392,16 @@ class SyncToAsync:
 
         # Work out what thread to run the code in
         if self._thread_sensitive:
-            if hasattr(AsyncToSync.executors, "current") and not AsyncToSync.executors.current.broken():
+            if (
+                hasattr(AsyncToSync.executors, "current")
+                and not AsyncToSync.executors.current.broken()
+            ):
                 # If we have a parent sync thread above somewhere, use that
-                executor = AsyncToSync.executors.current            
-            elif loop in AsyncToSync.loop_thread_executors and not AsyncToSync.loop_thread_executors[loop].broken():
+                executor = AsyncToSync.executors.current
+            elif (
+                loop in AsyncToSync.loop_thread_executors
+                and not AsyncToSync.loop_thread_executors[loop].broken()
+            ):
                 executor = AsyncToSync.loop_thread_executors[loop]
             elif self.thread_sensitive_context and self.thread_sensitive_context.get(
                 None
