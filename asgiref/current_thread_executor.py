@@ -40,6 +40,9 @@ class CurrentThreadExecutor(Executor):
         self._work_queue = queue.Queue()
         self._broken = False
 
+    def broken(self):
+        return self._broken
+
     def run_until_future(self, future):
         """
         Runs the code in the work queue until a result is available from the future.
