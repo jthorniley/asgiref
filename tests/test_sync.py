@@ -839,16 +839,28 @@ async def test_sync_to_async_with_blocker_non_thread_sensitive():
 
 @pytest.mark.asyncio
 async def test_sync_to_async_within_create_task():
+    """
+    Test a stack of sync_to_async/async_to_sync/sync_to_async works even when last
+    sync_to_async is wrapped in asyncio.wait_for.
+    """
     main_thread = threading.current_thread()
     sync_thread = None
+
+    # Hypothetical Django scenario - middleware function is sync and will run
+    # in a new thread created by sync_to_async
     def sync_middleware():
         nonlocal sync_thread
         sync_thread = threading.current_thread()
         assert sync_thread != main_thread
-        async_to_sync(async_view)()
+        # View is async and wrapped with async_to_sync. We use force_new_loop
+        # so that it is run on a new thread. In practice, the async_to_sync
+        # decorator may simple run before the loop has started, so it believes
+        # there is no existing async thread.
+        async_to_sync(async_view, force_new_loop=True)()
     
     async def async_view():
-        assert main_thread == threading.current_thread()
+        # Call a sync function using sync_to_async, but asyncio.wait_for it
+        # rather than directly await it.
         await asyncio.wait_for(sync_to_async(sync_task)(), timeout=1)
         
     task_executed = False
