@@ -854,9 +854,8 @@ async def test_sync_to_async_within_create_task():
         sync_thread = threading.current_thread()
         assert sync_thread != main_thread
         # View is async and wrapped with async_to_sync. We use force_new_loop
-        # so that it is run on a new thread. In practice, the async_to_sync
-        # decorator may simple run before the loop has started, so it believes
-        # there is no existing async thread.
+        # so that it is run on a new thread. This is the same behaviour as the
+        # async_to_sync decorator in a thread with no running loop.
         async_to_sync(async_view, force_new_loop=True)()
 
     async def async_view():
