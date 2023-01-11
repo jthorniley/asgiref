@@ -836,3 +836,28 @@ async def test_sync_to_async_with_blocker_non_thread_sensitive():
         raise
     finally:
         await trigger_task
+
+@pytest.mark.asyncio
+async def test_sync_to_async_within_create_task():
+    main_thread = threading.current_thread()
+    sync_thread = None
+    def sync_middleware():
+        nonlocal sync_thread
+        sync_thread = threading.current_thread()
+        assert sync_thread != main_thread
+        async_to_sync(async_view)()
+    
+    async def async_view():
+        assert main_thread == threading.current_thread()
+        await asyncio.wait_for(sync_to_async(sync_task)(), timeout=1)
+        
+    task_executed = False
+    def sync_task():
+        nonlocal task_executed, sync_thread
+        assert sync_thread == threading.current_thread()
+        task_executed = True
+    
+    async with ThreadSensitiveContext():
+        await sync_to_async(sync_middleware)()
+
+    assert task_executed
