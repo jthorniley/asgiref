@@ -392,9 +392,11 @@ class SyncToAsync:
 
         # Work out what thread to run the code in
         if self._thread_sensitive:
-            if hasattr(AsyncToSync.executors, "current"):
+            if hasattr(AsyncToSync.executors, "current") and not AsyncToSync.executors.current.broken():
                 # If we have a parent sync thread above somewhere, use that
-                executor = AsyncToSync.executors.current
+                executor = AsyncToSync.executors.current            
+            elif loop in AsyncToSync.loop_thread_executors and not AsyncToSync.loop_thread_executors[loop].broken():
+                executor = AsyncToSync.loop_thread_executors[loop]
             elif self.thread_sensitive_context and self.thread_sensitive_context.get(
                 None
             ):
@@ -409,9 +411,7 @@ class SyncToAsync:
                     # Create new thread executor in current context
                     executor = ThreadPoolExecutor(max_workers=1)
                     self.context_to_thread_executor[thread_sensitive_context] = executor
-            elif loop in AsyncToSync.loop_thread_executors:
-                # Re-use thread executor for running loop
-                executor = AsyncToSync.loop_thread_executors[loop]
+
             elif self.deadlock_context and self.deadlock_context.get(False):
                 raise RuntimeError(
                     "Single thread executor already being used, would deadlock"
@@ -491,7 +491,7 @@ class SyncToAsync:
         finally:
             # Only delete the launch_map parent if we set it, otherwise it is
             # from someone else.
-            if parent_set:
+            if parent_set and current_thread in self.launch_map:
                 del self.launch_map[current_thread]
 
     @staticmethod
