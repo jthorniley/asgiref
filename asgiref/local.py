@@ -3,9 +3,38 @@ import string
 import sys
 import threading
 import weakref
-
+import contextvars
+import asyncio
 
 class Local:
+    def __init__(self):
+        self._context_id_prefix = f"asgiref_local_{id(self)}_"
+        self._storage = {}
+
+    def __getattr__(self, key):
+        if key in self._storage:
+            return self._storage[key].get()
+        else:
+            raise AttributeError(f"{self!r} object has no attribute {key!r}")
+
+    def __setattr__(self, key, value):
+        if key in ("_storage", "_context_id_prefix"):
+            return super().__setattr__(key, value)
+
+        if key not in self._storage:
+            self._storage[key] = contextvars.ContextVar(
+                f"{self._context_id_prefix}_{key}"
+            )
+            
+        self._storage[key].set(value)
+
+    def __delattr__(self, key):
+        if key in self._storage:
+            del self._storage[key]
+        else:
+            raise AttributeError(f"{self!r} object has no attribute {key!r}")
+
+class OldLocal:
     """
     A drop-in replacement for threading.locals that also works with asyncio
     Tasks (via the current_task asyncio method), and passes locals through
@@ -55,6 +84,7 @@ class Local:
         if context_id is None:
             context_id = threading.current_thread()
             context_is_async = False
+
         # If we're thread-critical, we stop here, as we can't share contexts.
         if self._thread_critical:
             return context_id

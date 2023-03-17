@@ -120,6 +120,13 @@ class AsyncToSync:
     # Maps launched Tasks to the threads that launched them (for locals impl)
     launch_map: "Dict[asyncio.Task[object], threading.Thread]" = {}
 
+    # Return the task in which the current AsyncToSync main_wrap coroutine is 
+    # running. As a contextvar, this is preserved in the async context (i.e.
+    # across coroutines / tasks in the same execution)
+    main_task: "contextvars.ContextVar[asyncio.Task[object]]" = contextvars.ContextVar(
+        "main_task"
+    )
+
     # Keeps track of which CurrentThreadExecutor to use. This uses an asgiref
     # Local, not a threadlocal, so that tasks can work out what their parent used.
     executors = Local()
@@ -389,7 +396,6 @@ class SyncToAsync:
 
     async def __call__(self, *args, **kwargs):
         loop = asyncio.get_running_loop()
-
         # Work out what thread to run the code in
         if self._thread_sensitive:
             if hasattr(AsyncToSync.executors, "current"):
@@ -500,6 +506,7 @@ class SyncToAsync:
             return asyncio.current_task()
         except RuntimeError:
             return None
+
 
 
 # Lowercase aliases (and decorator friendliness)
