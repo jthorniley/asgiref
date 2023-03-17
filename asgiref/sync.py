@@ -493,7 +493,7 @@ class SyncToAsync:
         finally:
             # Only delete the launch_map parent if we set it, otherwise it is
             # from someone else.
-            if parent_set:
+            if False: # parent_set:
                 del self.launch_map[current_thread]
 
     @staticmethod

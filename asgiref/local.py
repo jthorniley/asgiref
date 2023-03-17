@@ -5,55 +5,41 @@ import threading
 import weakref
 import contextvars
 import asyncio
+from types import SimpleNamespace
 
 class Local:
     def __init__(self, thread_critical=False):
-        self._thread_critical = thread_critical
         self._thread_lock = threading.RLock()
         self._context_id_prefix = f"asgiref_local_{id(self)}_"
-        self._storage = {}
+        if thread_critical:
+            self._storage = threading.local()
+        else:
+            self._storage = SimpleNamespace()
 
     def __getattr__(self, key):
         with self._thread_lock:
             try:
-                if self._thread_critical:
-                    return self._storage[key].get().thread_local_value
-                else:
-                    return self._storage[key].get()
-            except (IndexError, LookupError):
+                return getattr(self._storage, key).get()
+            except (AttributeError, LookupError):
                 raise AttributeError(f"{self!r} object has no attribute {key!r}")
 
     def __setattr__(self, key, value):
-        if key in ("_storage", "_context_id_prefix", "_thread_critical", "_thread_lock"):
+        if key in ("_storage", "_context_id_prefix", "_thread_lock"):
             return super().__setattr__(key, value)
         
         with self._thread_lock:
 
-            if key not in self._storage:
-                self._storage[key] = contextvars.ContextVar(
+            if not hasattr(self._storage, key):
+                setattr(self._storage, key, contextvars.ContextVar(
                     f"{self._context_id_prefix}_{key}"
-                )
+                ))
 
-            if self._thread_critical:
-                try:
-                    thread_local = self._storage[key].get()
-                except LookupError:
-                    thread_local = threading.local()
-                    self._storage[key].set(thread_local)
-
-                thread_local.thread_local_value = value
-            else:
-                self._storage[key].set(value)
+            getattr(self._storage, key).set(value)
 
     def __delattr__(self, key):
         with self._thread_lock:
-            if key in self._storage:
-                print(f"del {key} {self._storage[key].get()}")
-                del self._storage[key]
-                print("deleted")
-            else:
-                raise AttributeError(f"{self!r} object has no attribute {key!r}")
-
+            return delattr(self._storage, key)
+        
 class OldLocal:
     """
     A drop-in replacement for threading.locals that also works with asyncio
