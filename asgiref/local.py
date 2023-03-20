@@ -7,7 +7,10 @@ import contextvars
 import asyncio
 from types import SimpleNamespace
 
+
 class Local:
+    DELETED = object()
+    
     def __init__(self, thread_critical=False):
         self._thread_lock = threading.RLock()
         self._context_id_prefix = f"asgiref_local_{id(self)}"
@@ -19,9 +22,16 @@ class Local:
     def __getattr__(self, key):
         with self._thread_lock:
             try:
-                return getattr(self._storage, key).get()
+                value = getattr(self._storage, key).get()
             except (AttributeError, LookupError):
                 raise AttributeError(f"{self!r} object has no attribute {key!r}")
+            else:
+                # Local.DELETED is a sentinel to tell us if object has been deleted
+                # in the local context (the same may still exist in a different context
+                # so we never delete the key from the _storage entirely)
+                if value is Local.DELETED:
+                    raise AttributeError(f"{self!r} object has no attribute {key!r}")
+                return value
 
     def __setattr__(self, key, value):
         if key in ("_storage", "_context_id_prefix", "_thread_lock"):
@@ -38,7 +48,9 @@ class Local:
 
     def __delattr__(self, key):
         with self._thread_lock:
-            return delattr(self._storage, key)
+            if hasattr(self._storage, key):
+                getattr(self._storage, key).set(Local.DELETED)
+
         
 class OldLocal:
     """

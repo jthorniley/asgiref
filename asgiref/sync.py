@@ -233,12 +233,11 @@ class AsyncToSync:
             # Clean up any executor we were running
             if loop is not None:
                 del self.loop_thread_executors[loop]
+            _restore_context(context[0])
             if hasattr(self.executors, "current"):
-                print("deleting ")
                 del self.executors.current
             if old_current_executor:
                 self.executors.current = old_current_executor
-            _restore_context(context[0])
 
         # Wait for results from the future.
         return call_result.result()
