@@ -125,6 +125,10 @@ class AsyncToSync:
     # Local, not a threadlocal, so that tasks can work out what their parent used.
     executors = Local()
 
+    current_thread_executor = contextvars.ContextVar(
+        "async_to_sync_current_thread_executor"
+    )
+
     # When we can't find a CurrentThreadExecutor from the context, such as
     # inside create_task, we'll look it up here from the running event loop.
     loop_thread_executors: "Dict[asyncio.AbstractEventLoop, CurrentThreadExecutor]" = {}
@@ -187,12 +191,8 @@ class AsyncToSync:
         # Make a CurrentThreadExecutor we'll use to idle in this thread - we
         # need one for every sync frame, even if there's one above us in the
         # same thread.
-        if hasattr(self.executors, "current"):
-            old_current_executor = self.executors.current 
-        else:
-            old_current_executor = None
         current_executor = CurrentThreadExecutor()
-        self.executors.current = current_executor
+        old_executor_token = self.current_thread_executor.set(current_executor)
         loop = None
 
         # Wrapping context in list so it can be reassigned from within
@@ -234,10 +234,7 @@ class AsyncToSync:
             if loop is not None:
                 del self.loop_thread_executors[loop]
             _restore_context(context[0])
-            if hasattr(self.executors, "current"):
-                del self.executors.current
-            if old_current_executor:
-                self.executors.current = old_current_executor
+            self.current_thread_executor.reset(old_executor_token)
 
         # Wait for results from the future.
         return call_result.result()
@@ -394,9 +391,10 @@ class SyncToAsync:
         loop = asyncio.get_running_loop()
         # Work out what thread to run the code in
         if self._thread_sensitive:
-            if hasattr(AsyncToSync.executors, "current") : #and not AsyncToSync.executors.current:
+            current_thread_executor = AsyncToSync.current_thread_executor.get(None)
+            if current_thread_executor:
                 # If we have a parent sync thread above somewhere, use that
-                executor = AsyncToSync.executors.current
+                executor = current_thread_executor
             elif self.thread_sensitive_context.get(None):
                 # If we have a way of retrieving the current context, attempt
                 # to use a per-context thread pool executor
