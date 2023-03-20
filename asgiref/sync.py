@@ -32,6 +32,7 @@ def _restore_context(context):
 # Until 3.12 is the minimum supported Python version, provide a shim.
 # Django 4.0 only supports 3.8+, so don't concern with the _or_partial backport.
 
+
 # Type hint: should be generic: whatever T it takes it returns. (Same id)
 def markcoroutinefunction(func: Any) -> Any:
     if hasattr(inspect, "markcoroutinefunction"):
@@ -120,13 +121,6 @@ class AsyncToSync:
     # Maps launched Tasks to the threads that launched them (for locals impl)
     launch_map: "Dict[asyncio.Task[object], threading.Thread]" = {}
 
-    # Return the task in which the current AsyncToSync main_wrap coroutine is 
-    # running. As a contextvar, this is preserved in the async context (i.e.
-    # across coroutines / tasks in the same execution)
-    main_task: "contextvars.ContextVar[asyncio.Task[object]]" = contextvars.ContextVar(
-        "main_task"
-    )
-
     # Keeps track of which CurrentThreadExecutor to use. This uses an asgiref
     # Local, not a threadlocal, so that tasks can work out what their parent used.
     executors = Local()
@@ -186,10 +180,6 @@ class AsyncToSync:
                     "just await the async function directly."
                 )
 
-        # Wrapping context in list so it can be reassigned from within
-        # `main_wrap`.
-        context = [contextvars.copy_context()]
-
         # Make a future for the return information
         call_result = Future()
         # Get the source thread
@@ -198,12 +188,17 @@ class AsyncToSync:
         # need one for every sync frame, even if there's one above us in the
         # same thread.
         if hasattr(self.executors, "current"):
-            old_current_executor = self.executors.current
+            old_current_executor = self.executors.current 
         else:
             old_current_executor = None
         current_executor = CurrentThreadExecutor()
         self.executors.current = current_executor
         loop = None
+
+        # Wrapping context in list so it can be reassigned from within
+        # `main_wrap`.
+        context = [contextvars.copy_context()]
+
         # Use call_soon_threadsafe to schedule a synchronous callback on the
         # main event loop's thread if it's there, otherwise make a new loop
         # in this thread.
@@ -227,6 +222,7 @@ class AsyncToSync:
                 loop_future.result()
             else:
                 # Call it inside the existing loop
+                print("main event loop: %s, %s, %s" % (threading.current_thread(), self.main_event_loop, current_executor))
                 self.main_event_loop.call_soon_threadsafe(
                     self.main_event_loop.create_task, awaitable
                 )
@@ -238,6 +234,7 @@ class AsyncToSync:
             if loop is not None:
                 del self.loop_thread_executors[loop]
             if hasattr(self.executors, "current"):
+                print("deleting ")
                 del self.executors.current
             if old_current_executor:
                 self.executors.current = old_current_executor
@@ -398,7 +395,7 @@ class SyncToAsync:
         loop = asyncio.get_running_loop()
         # Work out what thread to run the code in
         if self._thread_sensitive:
-            if hasattr(AsyncToSync.executors, "current"):
+            if hasattr(AsyncToSync.executors, "current") : #and not AsyncToSync.executors.current:
                 # If we have a parent sync thread above somewhere, use that
                 executor = AsyncToSync.executors.current
             elif self.thread_sensitive_context.get(None):
@@ -427,6 +424,7 @@ class SyncToAsync:
         else:
             # Use the passed in executor, or the loop's default if it is None
             executor = self._executor
+        print("running sync to async in executor %s, %s" % (threading.current_thread(), executor,))
 
         context = contextvars.copy_context()
         child = functools.partial(self.func, *args, **kwargs)
@@ -493,7 +491,7 @@ class SyncToAsync:
         finally:
             # Only delete the launch_map parent if we set it, otherwise it is
             # from someone else.
-            if False: # parent_set:
+            if parent_set and current_thread in self.launch_map:
                 del self.launch_map[current_thread]
 
     @staticmethod
@@ -506,7 +504,6 @@ class SyncToAsync:
             return asyncio.current_task()
         except RuntimeError:
             return None
-
 
 
 # Lowercase aliases (and decorator friendliness)

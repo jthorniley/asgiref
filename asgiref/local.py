@@ -10,7 +10,7 @@ from types import SimpleNamespace
 class Local:
     def __init__(self, thread_critical=False):
         self._thread_lock = threading.RLock()
-        self._context_id_prefix = f"asgiref_local_{id(self)}_"
+        self._context_id_prefix = f"asgiref_local_{id(self)}"
         if thread_critical:
             self._storage = threading.local()
         else:
