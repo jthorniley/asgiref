@@ -1,6 +1,7 @@
 import contextvars
 import threading
 
+
 class CVar:
     def __init__(self):
         self._lock = threading.RLock()
@@ -14,7 +15,7 @@ class CVar:
                 return storage_object[key]
             except KeyError:
                 raise AttributeError(key)
-        
+
     def __setattr__(self, key, value) -> None:
         if key in ("_data", "_lock"):
             return super().__setattr__(key, value)
@@ -29,10 +30,11 @@ class CVar:
             storage_object = self._data.get({})
             del storage_object[key]
             self._data.set(storage_object)
-        
+
 
 class Local:
     """Local storage for async tasks."""
+
     def __init__(self, thread_critical=False):
         if thread_critical:
             # Thread-local storage
@@ -43,7 +45,7 @@ class Local:
 
     def __getattr__(self, key):
         return getattr(self._storage, key)
-            
+
     def __setattr__(self, key, value):
         if key == "_storage":
             return super().__setattr__(key, value)
@@ -52,5 +54,3 @@ class Local:
 
     def __delattr__(self, key):
         delattr(self._storage, key)
-
-        

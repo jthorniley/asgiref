@@ -272,9 +272,7 @@ class AsyncToSync:
         func = functools.partial(self.__call__, parent)
         return functools.update_wrapper(func, self.awaitable)
 
-    async def main_wrap(
-        self, args, kwargs, call_result, exc_info, context
-    ):
+    async def main_wrap(self, args, kwargs, call_result, exc_info, context):
         """
         Wraps the awaitable with something that puts the result into the
         result/exception future.
