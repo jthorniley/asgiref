@@ -49,13 +49,13 @@ class Local:
 
     Data stored on this object in a given scope is NOT visible:
 
-    - to async tasks that are running in `parallel` (not spawned or awaited
+    - to async tasks that are running in "parallel" (not spawned or awaited
       from the current scope).
     - when the context has been intentionally changed for another one by e.g.
       created using `contextvars.copy_context`.
     - to code running in a new thread.
 
-    If `thread_sensitive` is `False`, data can still be accessed from threads
+    If `thread_critical` is `False`, data can still be accessed from threads
     spawned from the current thread if the context is copied across - this
     happens when the thread is spawned by `async_to_sync`. If
     `thread_critical` is set to `True`, the data will always be thread-local
