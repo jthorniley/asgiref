@@ -14,9 +14,9 @@ class CVar:
             raise AttributeError(key)
         
     def __setattr__(self, key, value) -> None:
-        if key == "_data":
+        if key in ("_data", "_lock"):
             return super().__setattr__(key, value)
-        
+
         storage_object = self._data.get()
         storage_object[key] = value
         self._data.set(storage_object)
@@ -45,7 +45,7 @@ class Local:
     def __setattr__(self, key, value):
         if key in ("_storage", "_thread_lock"):
             return super().__setattr__(key, value)
-        
+
         with self._thread_lock:
             setattr(self._storage, key, value)
 
