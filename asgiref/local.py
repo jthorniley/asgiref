@@ -6,7 +6,7 @@ class CVar:
     def __init__(self):
         self._lock = threading.RLock()
         with self._lock:
-            self._data = contextvars.ContextVar("asgiref-cvar")
+            self._data = contextvars.ContextVar("cvar")
 
     def __getattr__(self, key):
         with self._lock:
@@ -36,6 +36,8 @@ class Local:
     """Local storage for async tasks."""
 
     def __init__(self, thread_critical=False):
+        self._thread_critical = thread_critical
+
         if thread_critical:
             # Thread-local storage
             self._storage = threading.local()
@@ -43,14 +45,22 @@ class Local:
             # Contextvar storage
             self._storage = CVar()
 
+    def _get_storage(self):
+        if self._thread_critical:
+            if not hasattr(self._storage, "cvar"):
+                self._storage.cvar = CVar()
+            return self._storage.cvar
+        else:
+            return self._storage
+
     def __getattr__(self, key):
-        return getattr(self._storage, key)
+        return getattr(self._get_storage(), key)
 
     def __setattr__(self, key, value):
-        if key == "_storage":
+        if key in ("_local", "_storage", "_thread_critical"):
             return super().__setattr__(key, value)
 
-        setattr(self._storage, key, value)
+        setattr(self._get_storage(), key, value)
 
     def __delattr__(self, key):
-        delattr(self._storage, key)
+        delattr(self._get_storage(), key)
