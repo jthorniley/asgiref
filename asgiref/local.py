@@ -30,13 +30,13 @@ class CVar:
 class Local:
     def __init__(self, thread_critical=False):
         self._thread_lock = threading.RLock()
-
-        if thread_critical:
-            # Thread-local storage
-            self._storage = threading.local()
-        else:
-            # Contextvar storage
-            self._storage = CVar()
+        with self._thread_lock:
+            if thread_critical:
+                # Thread-local storage
+                self._storage = threading.local()
+            else:
+                # Contextvar storage
+                self._storage = CVar()
 
     def __getattr__(self, key):
         with self._thread_lock:
