@@ -116,9 +116,6 @@ class AsyncToSync:
     finally exiting once the async task returns.
     """
 
-    # Maps launched Tasks to the threads that launched them (for locals impl)
-    launch_map: "Dict[asyncio.Task[object], threading.Thread]" = {}
-
     # Keeps track of which CurrentThreadExecutor to use. Uses contextvars. When using
     # async_to_sync and sync_to_async, the context is preserved across threads (but
     # otherwise it is "local" to the running async task so this does not bleed between
@@ -294,8 +291,6 @@ class AsyncToSync:
         if context is not None:
             _restore_context(context[0])
 
-        current_task = SyncToAsync.get_current_task()
-        self.launch_map[current_task] = source_thread
         try:
             # If we have an exception, run the function inside the except block
             # after raising it so exc_info is correctly populated.
@@ -311,8 +306,6 @@ class AsyncToSync:
         else:
             call_result.set_result(result)
         finally:
-            del self.launch_map[current_task]
-
             context[0] = contextvars.copy_context()
 
 
@@ -337,9 +330,6 @@ class SyncToAsync:
     In order to pass in an executor, thread_sensitive must be set to False, otherwise
     a TypeError will be raised.
     """
-
-    # Maps launched threads to the coroutines that spawned them
-    launch_map: "Dict[threading.Thread, asyncio.Task[object]]" = {}
 
     # Storage for main event loop references
     threadlocal = threading.local()
@@ -437,7 +427,6 @@ class SyncToAsync:
                 functools.partial(
                     self.thread_handler,
                     loop,
-                    self.get_current_task(),
                     sys.exc_info(),
                     func,
                     *args,
@@ -459,49 +448,24 @@ class SyncToAsync:
         func = functools.partial(self.__call__, parent)
         return functools.update_wrapper(func, self.func)
 
-    def thread_handler(self, loop, source_task, exc_info, func, *args, **kwargs):
+    def thread_handler(self, loop, exc_info, func, *args, **kwargs):
         """
         Wraps the sync application with exception handling.
         """
         # Set the threadlocal for AsyncToSync
         self.threadlocal.main_event_loop = loop
         self.threadlocal.main_event_loop_pid = os.getpid()
-        # Set the task mapping (used for the locals module)
-        current_thread = threading.current_thread()
-        if self.launch_map.get(current_thread):
-            # Our parent task was launched from this same thread, so don't make
-            # a launch map entry - let it shortcut over us! (and stop infinite loops)
-            parent_set = False
-        else:
-            self.launch_map[current_thread] = source_task
-            parent_set = True
-        # Run the function
-        try:
-            # If we have an exception, run the function inside the except block
-            # after raising it so exc_info is correctly populated.
-            if exc_info[1]:
-                try:
-                    raise exc_info[1]
-                except BaseException:
-                    return func(*args, **kwargs)
-            else:
-                return func(*args, **kwargs)
-        finally:
-            # Only delete the launch_map parent if we set it, otherwise it is
-            # from someone else.
-            if parent_set:
-                del self.launch_map[current_thread]
 
-    @staticmethod
-    def get_current_task():
-        """
-        Implementation of asyncio.current_task()
-        that returns None if there is no task.
-        """
-        try:
-            return asyncio.current_task()
-        except RuntimeError:
-            return None
+        # Run the function
+        # If we have an exception, run the function inside the except block
+        # after raising it so exc_info is correctly populated.
+        if exc_info[1]:
+            try:
+                raise exc_info[1]
+            except BaseException:
+                return func(*args, **kwargs)
+        else:
+            return func(*args, **kwargs)
 
 
 # Lowercase aliases (and decorator friendliness)
