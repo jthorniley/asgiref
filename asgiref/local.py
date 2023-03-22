@@ -3,7 +3,7 @@ import contextvars
 import threading
 
 
-class CVar:
+class _CVar:
     """Storage utility for Local."""
 
     def __init__(self):
@@ -73,7 +73,7 @@ class Local:
             self._storage = threading.local()
         else:
             # Contextvar storage
-            self._storage = CVar()
+            self._storage = _CVar()
 
     @contextlib.contextmanager
     def _lock_storage(self):
@@ -81,7 +81,7 @@ class Local:
         if self._thread_critical:
             # Ensure context exists in the current thread
             if not hasattr(self._storage, "cvar"):
-                self._storage.cvar = CVar()
+                self._storage.cvar = _CVar()
 
             # self._storage is a thread local, so the members
             # can't be accessed in another thread (we don't
