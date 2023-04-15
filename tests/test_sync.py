@@ -7,7 +7,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from unittest import TestCase
-
+from unittest.mock import Mock
 import pytest
 
 from asgiref.sync import (
@@ -25,6 +25,7 @@ async def test_sync_to_async():
     Tests we can call sync functions from an async thread
     (even if the number of thread workers is less than the number of calls)
     """
+
     # Define sync function
     def sync_function():
         time.sleep(1)
@@ -121,6 +122,7 @@ async def test_sync_to_async_decorator():
     """
     Tests sync_to_async as a decorator
     """
+
     # Define sync function
     @sync_to_async
     def test_function():
@@ -160,6 +162,7 @@ async def test_sync_to_async_method_decorator():
     """
     Tests sync_to_async as a method decorator
     """
+
     # Define sync function
     class TestClass:
         @sync_to_async
@@ -410,6 +413,7 @@ def test_async_to_sync_method_self_attribute():
     """
     Tests async_to_sync on a method copies __self__.
     """
+
     # Define async function.
     class TestClass:
         async def test_function(self):
@@ -836,3 +840,31 @@ async def test_sync_to_async_with_blocker_non_thread_sensitive():
         raise
     finally:
         await trigger_task
+
+
+@pytest.mark.asyncio
+async def test_nested_async_to_sync_task_safety():
+    """
+    When a new async task is created in a async_to_sync block nested within
+    a sync_to_async we need to prevent deadlocking.
+
+    If there is a deadlock, the test will hang forever (using the with timeout()
+    context manager is futile as the timeout task never runs due to the deadlock).
+    """
+
+    target_task = Mock()
+
+    @async_to_sync
+    async def await_task():
+        await asyncio.create_task(sync_to_async(target_task)())
+
+    @sync_to_async
+    def entry():
+        return await_task()
+
+    async with ThreadSensitiveContext():
+        await entry()
+
+    # Assert that the task was in fact called (this test is really testing
+    # for a deadlock, so failure is the test hangs).
+    target_task.assert_called_once()
