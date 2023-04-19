@@ -12,7 +12,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional, overload
 
 from .current_thread_executor import CurrentThreadExecutor
-from .local import Local
 
 
 def _restore_context(context):
@@ -31,6 +30,7 @@ def _restore_context(context):
 # The latter is replaced with the inspect.markcoroutinefunction decorator.
 # Until 3.12 is the minimum supported Python version, provide a shim.
 # Django 4.0 only supports 3.8+, so don't concern with the _or_partial backport.
+
 
 # Type hint: should be generic: whatever T it takes it returns. (Same id)
 def markcoroutinefunction(func: Any) -> Any:
@@ -122,7 +122,16 @@ class AsyncToSync:
 
     # Keeps track of which CurrentThreadExecutor to use. This uses an asgiref
     # Local, not a threadlocal, so that tasks can work out what their parent used.
-    executors = Local()
+    executor: "contextvars.ContextVar[CurrentThreadExecutor]" = contextvars.ContextVar(
+        "current_thread_executor"
+    )
+
+    @classmethod
+    def get_current_thread_executor(cls) -> "Optional[CurrentThreadExecutor]":
+        try:
+            return cls.executor.get()
+        except LookupError:
+            return None
 
     # When we can't find a CurrentThreadExecutor from the context, such as
     # inside create_task, we'll look it up here from the running event loop.
@@ -181,10 +190,6 @@ class AsyncToSync:
                     "just await the async function directly."
                 )
 
-        # Wrapping context in list so it can be reassigned from within
-        # `main_wrap`.
-        context = [contextvars.copy_context()]
-
         # Make a future for the return information
         call_result = Future()
         # Get the source thread
@@ -192,12 +197,12 @@ class AsyncToSync:
         # Make a CurrentThreadExecutor we'll use to idle in this thread - we
         # need one for every sync frame, even if there's one above us in the
         # same thread.
-        if hasattr(self.executors, "current"):
-            old_current_executor = self.executors.current
-        else:
-            old_current_executor = None
         current_executor = CurrentThreadExecutor()
-        self.executors.current = current_executor
+        old_executor_token = self.executor.set(current_executor)
+
+        # Wrapping context in list so it can be reassigned from within
+        # `main_wrap`.
+        context = [contextvars.copy_context()]
         loop = None
         # Use call_soon_threadsafe to schedule a synchronous callback on the
         # main event loop's thread if it's there, otherwise make a new loop
@@ -232,11 +237,9 @@ class AsyncToSync:
             # Clean up any executor we were running
             if loop is not None:
                 del self.loop_thread_executors[loop]
-            if hasattr(self.executors, "current"):
-                del self.executors.current
-            if old_current_executor:
-                self.executors.current = old_current_executor
             _restore_context(context[0])
+
+            self.executor.reset(old_executor_token)
 
         # Wait for results from the future.
         return call_result.result()
@@ -398,9 +401,11 @@ class SyncToAsync:
 
         # Work out what thread to run the code in
         if self._thread_sensitive:
-            if hasattr(AsyncToSync.executors, "current"):
+            current_thread_executor = AsyncToSync.get_current_thread_executor()
+
+            if current_thread_executor is not None:
                 # If we have a parent sync thread above somewhere, use that
-                executor = AsyncToSync.executors.current
+                executor = current_thread_executor
             elif self.thread_sensitive_context.get(None):
                 # If we have a way of retrieving the current context, attempt
                 # to use a per-context thread pool executor
@@ -474,7 +479,7 @@ class SyncToAsync:
         self.threadlocal.main_event_loop_pid = os.getpid()
         # Set the task mapping (used for the locals module)
         current_thread = threading.current_thread()
-        if AsyncToSync.launch_map.get(source_task) == current_thread:
+        if current_thread in self.launch_map:
             # Our parent task was launched from this same thread, so don't make
             # a launch map entry - let it shortcut over us! (and stop infinite loops)
             parent_set = False
